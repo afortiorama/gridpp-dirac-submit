@@ -1,0 +1,102 @@
+#!/usr/bin/env python
+#
+# Template for submitting lots of jobs to GridPP DIRAC or LHCb DIRAC
+# Lots of inline comments. Please edit to suit your situation.
+#
+# This script uses DIRAC parametric jobs:
+#  https://github.com/DIRACGrid/DIRAC/wiki/JobManagementAdvanced
+
+import re
+import sys
+import time
+
+from DIRAC.Core.Base import Script
+Script.parseCommandLine()
+
+from DIRAC.Core.Security.ProxyInfo import getProxyInfo
+from DIRAC.Interfaces.API.Dirac import Dirac
+
+submit_site=sys.argv[1]
+site=submit_site.split('.')[1]
+processors=8
+
+# We construct the DIRAC Job Description Language as string in jdl:
+jdl = ''
+
+# Something descriptive for the name! Like 'FastRawMerging'.
+
+jdl += 'JobName = "FAH@GridPP.{0}".;\n'.format(site)
+
+jdl += 'Site = "{0}";\n'.format(submit_site)
+
+
+jdl += 'OutputSE = "RAL-LCG2-disk";\n'
+jdl += 'Tags = "{0}Processors";\n'.format(processors) 
+#jdl += 'GridCE = "ce01.tier2.hep.manchester.ac.uk";\n'	# IRIS
+
+# jdl += 'Tags = "manchester";\n'
+
+jdl += 'Platform = "AnyPlatform";\n'
+
+# The script you want to run.
+jdl += 'Executable = "runcontainer";\n'
+
+# command line arguments
+jdl += 'Arguments = "--containerImage docker://coreweave/fah-gpu:7.5.1 -p \'FAHClient%20--user%3DGridPP.{0}%20--team%3D246309%20--gpu%3Dfalse%20--cpus%3D{1}%20--smp%3Dtrue%20--max-units%3D4%20--exit-when-done\'";\n'.format(site,processors)
+
+#print (jdl)
+#sys.exit(0)
+
+# Send the script you want to run (in this directory where you run man-job-submit
+# or give the full path to it)
+jdl += 'InputSandbox = { "runcontainer" };\n'
+
+# Tell DIRAC where to get your big input data files from
+#jdl += 'InputData = "LFN:/skatelescope.eu/user/r/rachael.ainsworth/notebook_test/3C277.1.MULTTB";\n'
+
+# Direct stdout and stderr to files
+jdl += 'StdOutput = "StdOut";\n';
+jdl += 'StdError = "StdErr";\n';
+
+# Small files can be put in the output sandbox
+jdl += 'OutputSandbox = {"StdOut", "StdErr", "log.txt"};\n'
+
+# Files to be saved to your grid storage area in case they are large
+jdl += 'OutputData = "LFN:/gridpp/user/a/alessandra.forti/fah_test/fah_gridpp_output_%j.tar";\n'
+
+# Tell DIRAC how many seconds your job might run for
+jdl += 'MaxCPUTime = 172800;\n'
+
+# Create a unique Job Group for this set of jobs
+try:
+  diracUsername = getProxyInfo()['Value']['username']
+except:
+  print 'Failed to get DIRAC username. No proxy set up?'
+  sys.exit(1)
+
+jobGroup = diracUsername + time.strftime('.%Y%m%d%H%M%S')
+jdl += 'JobGroup = "' + jobGroup + '";\n'
+
+print 'Will submit this DIRAC JDL:'
+print '====='
+print jdl
+print '====='
+print
+# Submit the job(s)
+print 'Attempting to submit job(s) in JobGroup ' + jobGroup
+print
+dirac = Dirac()
+result = dirac.submitJob(jdl)
+print
+print '====='
+print
+print 'Submission Result: ',result
+print
+print '====='
+print
+
+if result['OK']:
+  print 'Retrieve output with  dirac-wms-job-get-output --JobGroup ' + jobGroup
+else:
+  print 'There was a problem submitting your job(s) - see above!!!'
+print
